@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>冷凍クエスト - 第三種冷凍機械責任者 学習RPG</title>
+<style>
+/* ============================================================
+   冷凍クエスト v2 — レトロRPG風（縦画面・スマホ前提）
+   RPGツクール/DQ風の氷の洞窟の部屋。敵は上、勇者は下（後ろ姿）。
+   ============================================================ */
+:root {
+  --win-bg:    #10142a;   /* ウィンドウ背景（濃紺） */
+  --win-line:  #e8f2ff;   /* ウィンドウ枠（白） */
+  --text:      #e8f2ff;
+  --gold:      #f0c860;
+  --danger:    #ff7070;
+  --ok:        #80e8a8;
+  --ice:       #7fd0f0;
+  --px: 5px;              /* ピクセルアートの1ドットサイズ */
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #05070f;
+  color: var(--text);
+  /* レトロ感のあるゴシック（外部フォント不使用） */
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, monospace;
+  display: flex;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 縦画面コンテナ（スマホ想定 最大430px） */
+#game {
+  position: relative;
+  width: 100%;
+  max-width: 430px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 6px 10px;
+  gap: 6px;
+}
+
+/* ============================================================
+   DQ風ウィンドウ（白の二重枠＋濃紺）
+   ============================================================ */
+.win {
+  background: var(--win-bg);
+  border: 3px solid var(--win-line);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px var(--win-bg), inset 0 0 0 4px #6a7ba8;
+  padding: 8px 10px;
+}
+
+/* ---------- 上部ステータス ---------- */
+#status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: .8rem;
+  font-weight: bold;
+  gap: 8px;
+}
+#status .lv { color: var(--gold); white-space: nowrap; }
+#status .kills { color: var(--ice); font-size: .68rem; white-space: nowrap; }
+.bar-outer {
+  height: 8px; margin-top: 2px;
+  border: 1px solid #6a7ba8; background: #05070f;
+}
+.bar-inner { height: 100%; background: var(--gold); transition: width .3s; }
+#exp-bar .bar-inner { background: var(--gold); }
+#exp-wrap { flex: 1; max-width: 150px; }
+#exp-wrap .label { font-size: .65rem; color: var(--gold); }
+
+/* ---------- 部屋バー（部屋名＋移動ボタン） ---------- */
+#roombar {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 8px; padding: 6px 10px;
+}
+#room-name { font-weight: bold; font-size: .82rem; color: var(--room-accent, var(--ice)); white-space: nowrap; }
+#room-switch {
+  font-family: inherit; font-size: .72rem; font-weight: bold;
+  color: var(--win-bg); background: var(--win-line);
+  border: none; border-radius: 5px; padding: 6px 11px; cursor: pointer;
+  white-space: nowrap; touch-action: manipulation;
+}
+#room-switch:active { transform: scale(.96); }
+
+/* ============================================================
+   バトルシーン：氷の洞窟の部屋（タイル床＋壁＋たいまつ）
+   ============================================================ */
+#scene {
+  position: relative;
+  height: 292px;
+  border: 3px solid var(--win-line);
+  border-radius: 6px;
+  overflow: hidden;
+  image-rendering: pixelated;
+  /* 壁（上部）：氷レンガ */
+  background:
+    /* 床タイル（市松） */
+    repeating-conic-gradient(#1b2c4e 0% 25%, #162542 0% 50%) 0 72px / 36px 36px,
+    #162542;
+}
+/* 部屋の壁：上部の氷レンガ帯 */
+#wall {
+  position: absolute; top: 0; left: 0; right: 0; height: 72px;
+  background:
+    repeating-linear-gradient(0deg,   #0e1830 0 2px, transparent 2px 24px),
+    repeating-linear-gradient(90deg,  #0e1830 0 2px, transparent 2px 44px),
+    linear-gradient(#2a4676, #223a64);
+  border-bottom: 4px solid #0e1830;
+}
+/* 壁の装飾：氷のたいまつ（青い炎がゆらめく） */
+.torch {
+  position: absolute; top: 26px;
+  width: 8px; height: 22px;
+  background: #6a4a2a;
+}
+.torch::before {           /* 炎 */
+  content: ""; position: absolute; top: -14px; left: -3px;
+  width: 14px; height: 16px;
+  background: radial-gradient(ellipse at 50% 80%, #d8f4ff, var(--ice) 55%, transparent 72%);
+  border-radius: 50% 50% 40% 40%;
+  animation: flicker 1.1s infinite alternate;
+}
+@keyframes flicker { from { transform: scale(1) } to { transform: scale(1.25) translateY(-2px); opacity: .85 } }
+.torch.t1 { left: 12%; } .torch.t2 { right: 12%; }
+/* 床のカーペット（赤い絨毯：RPGの部屋らしさ） */
+#carpet {
+  position: absolute; left: 50%; top: 76px; bottom: 8px;
+  width: 120px; transform: translateX(-50%);
+  background: #5e2436;
+  border-left: 6px solid #7c3448; border-right: 6px solid #7c3448;
+  opacity: .85;
+}
+
+/* ============================================================
+   法令の森（緑の部屋）— #scene.room-forest で切り替え
+   ============================================================ */
+#scene.room-forest {
+  background:
+    repeating-conic-gradient(#1c3a24 0% 25%, #17301d 0% 50%) 0 72px / 36px 36px,
+    #17301d;
+}
+#scene.room-forest #wall {
+  background:
+    repeating-linear-gradient(90deg, #16301c 0 3px, transparent 3px 30px),
+    linear-gradient(#2f5a34, #23492a);
+  border-bottom: 4px solid #11250f;
+}
+/* 森のたいまつ＝ランタン風（緑の光） */
+#scene.room-forest .torch::before {
+  background: radial-gradient(ellipse at 50% 80%, #eaffe0, #9be86a 55%, transparent 72%);
+}
+/* 森の絨毯＝苔むした小道（緑） */
+#scene.room-forest #carpet {
+  background: #2c4d2a;
+  border-left-color: #3e6b3a; border-right-color: #3e6b3a;
+}
+
+/* ---------- ピクセルアート共通（JSでbox-shadow生成） ---------- */
+.sprite { position: absolute; width: var(--px); height: var(--px); }
+
+/* 敵（上側・中央） */
+#enemy-anchor {
+  position: absolute; top: 62px; left: 50%;
+  transform: translateX(-50%);
+  transition: transform .12s;
+}
+#enemy-anchor.hover { animation: hover 2.2s ease-in-out infinite; }
+@keyframes hover { 50% { transform: translateX(-50%) translateY(-7px); } }
+#enemy-anchor.hit   { animation: enemyHit .45s; }
+@keyframes enemyHit {
+  0%,100% { filter: none; }
+  20%,60% { filter: brightness(4); }
+  40%     { filter: brightness(4); transform: translateX(-50%) translateY(-4px) rotate(6deg); }
+}
+#enemy-anchor.slain { animation: shatter .7s forwards; }
+@keyframes shatter {
+  25%  { filter: brightness(4); }
+  100% { transform: translateX(-50%) scale(1.7) rotate(30deg); opacity: 0; filter: brightness(4); }
+}
+#enemy-anchor.spawn { animation: spawn .5s; }
+@keyframes spawn { from { transform: translateX(-50%) scale(0); opacity: 0; } }
+/* 敵が襲いかかる（誤答時） */
+#enemy-anchor.attack { animation: enemyAttack .5s; }
+@keyframes enemyAttack {
+  35% { transform: translateX(-50%) translateY(96px) scale(1.12); }
+  60% { transform: translateX(-50%) translateY(96px); }
+}
+
+/* 敵のHPと名前 */
+#enemy-tag {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  text-align: center; font-size: .68rem; font-weight: bold;
+  text-shadow: 1px 1px 0 #000; white-space: nowrap; z-index: 2;
+}
+#enemy-hp-outer {
+  width: 90px; height: 6px; margin: 3px auto 0;
+  border: 1px solid #dfefff; background: #05070f;
+}
+#enemy-hp { height: 100%; background: var(--danger); transition: width .25s; }
+
+/* 勇者（下側・中央・後ろ姿） */
+#hero-anchor {
+  position: absolute; bottom: 14px; left: 50%;
+  transform: translateX(-50%);
+  transition: transform .12s;
+}
+/* 勇者の頭上のHPバー */
+#hero-tag {
+  position: absolute; bottom: 100%; left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 5px;
+  text-align: center; white-space: nowrap; z-index: 2;
+  pointer-events: none;
+}
+#hero-tag .label { font-size: .58rem; color: #dfefff; text-shadow: 1px 1px 0 #000; }
+#hero-hp-outer {
+  width: 72px; height: 6px; margin: 2px auto 0;
+  border: 1px solid #dfefff; background: #05070f;
+}
+#hp-bar { height: 100%; background: var(--ok); transition: width .3s; }
+#hp-bar.low { background: var(--danger); }
+#hero-anchor.attack { animation: heroAttack .5s; }
+@keyframes heroAttack {
+  30% { transform: translateX(-50%) translateY(-92px); }
+  55% { transform: translateX(-50%) translateY(-92px); }
+}
+#hero-anchor.hurt { animation: heroHurt .5s; }
+@keyframes heroHurt {
+  25% { filter: brightness(1.8) sepia(1) hue-rotate(-50deg) saturate(5); transform: translateX(-56%) rotate(-6deg); }
+  60% { filter: brightness(1.5) sepia(1) hue-rotate(-50deg) saturate(4); transform: translateX(-46%); }
+}
+
+/* 斬撃エフェクト（白い斜線） */
+#slash {
+  position: absolute; top: 92px; left: 50%;
+  width: 90px; height: 6px;
+  background: linear-gradient(90deg, transparent, #fff, transparent);
+  transform: translateX(-50%) rotate(-40deg) scaleX(0);
+  border-radius: 3px;
+  pointer-events: none;
+}
+#slash.go { animation: slashGo .35s; }
+@keyframes slashGo {
+  30% { transform: translateX(-50%) rotate(-40deg) scaleX(1.3); opacity: 1; }
+  100% { transform: translateX(-50%) rotate(-40deg) scaleX(1.5); opacity: 0; }
+}
+
+/* 画面シェイク（被ダメージ） */
+#scene.shake { animation: shake .4s; }
+@keyframes shake {
+  20% { transform: translate(-4px, 2px); }
+  40% { transform: translate(4px, -2px); }
+  60% { transform: translate(-3px, -2px); }
+  80% { transform: translate(3px, 2px); }
+}
+
+/* ダメージ・EXPポップアップ */
+.popup {
+  position: absolute; z-index: 3;
+  font-weight: bold; font-size: 1.05rem;
+  text-shadow: 2px 2px 0 #000;
+  animation: rise 1s forwards;
+  pointer-events: none;
+}
+@keyframes rise { to { transform: translateY(-42px); opacity: 0; } }
+
+/* 宝箱（ドロップ演出） */
+#chest {
+  position: absolute; top: 128px; left: 50%;
+  transform: translateX(-50%);
+  display: none; z-index: 3;
+}
+#chest.show { display: block; animation: chestPop .5s; }
+@keyframes chestPop { from { transform: translateX(-50%) scale(0); } }
+
+/* ============================================================
+   メッセージウィンドウ（DQ風・下部）
+   ============================================================ */
+#msg {
+  min-height: 58px;
+  font-size: .82rem;
+  line-height: 1.6;
+  font-weight: bold;
+  letter-spacing: .04em;
+}
+#msg .gold { color: var(--gold); }
+#msg .red  { color: var(--danger); }
+#msg .grn  { color: var(--ok); }
+
+/* ============================================================
+   問題ウィンドウ＋4択
+   ============================================================ */
+#question-wrap { position: relative; }
+#question-card {
+  font-size: .76rem;
+  line-height: 1.55;
+}
+#question-card.fall { animation: fall .5s cubic-bezier(.25,.9,.35,1.1); }
+@keyframes fall { from { transform: translateY(-120px); opacity: 0; } }
+#q-topic { color: var(--ice); font-size: .68rem; margin-bottom: 6px; }
+#q-oxquestion {
+  font-weight: bold;
+  font-size: 1.02rem;
+  line-height: 1.65;
+  margin-bottom: 10px;
+}
+#q-hint { color: var(--gold); font-size: .8rem; text-align: center; }
+#question-card { min-height: 96px; display: flex; flex-direction: column; justify-content: center; }
+.stmt { margin: 4px 0; }
+.stmt b { color: var(--gold); }
+
+/* ○×ボタン（大きく・色分け） */
+.ox-btn { font-size: 1.15rem; padding: 18px 6px; }
+.ox-btn.ox-o { color: var(--ok); }
+.ox-btn.ox-x { color: var(--danger); }
+.ox-btn.ox-o.correct, .ox-btn.ox-o.wrong { border-color: var(--ok); }
+.ox-btn.ox-x.correct, .ox-btn.ox-x.wrong { border-color: var(--danger); }
+
+#choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.choice-btn {
+  font-family: inherit;
+  font-size: .92rem;
+  font-weight: bold;
+  color: var(--text);
+  background: var(--win-bg);
+  border: 3px solid var(--win-line);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px var(--win-bg), inset 0 0 0 4px #6a7ba8;
+  padding: 12px 6px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.choice-btn:active:not(:disabled) { transform: scale(.97); }
+.choice-btn:disabled { opacity: .9; cursor: default; }
+.choice-btn.correct { border-color: var(--ok);    color: var(--ok); }
+.choice-btn.wrong   { border-color: var(--danger); color: var(--danger); }
+/* 選択カーソル「▶」 */
+.choice-btn.correct::before, .choice-btn.wrong::before { content: "▶ "; }
+.ox-btn.correct::before, .ox-btn.wrong::before { content: ""; }
+
+/* ============================================================
+   回答後の確認ポップアップ
+   ============================================================ */
+#popup-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(3,5,10,.72);
+  z-index: 15;
+  justify-content: center; align-items: center;
+  padding: 20px 14px;
+}
+#popup-overlay.show { display: flex; animation: popupFade .2s; }
+@keyframes popupFade { from { opacity: 0; } }
+#popup-card {
+  width: 100%; max-width: 380px;
+  text-align: center;
+  border-width: 3px;
+}
+#popup-card.ok { border-color: var(--ok); box-shadow: inset 0 0 0 2px var(--win-bg), inset 0 0 0 4px var(--ok); }
+#popup-card.ng { border-color: var(--danger); box-shadow: inset 0 0 0 2px var(--win-bg), inset 0 0 0 4px var(--danger); }
+#popup-card.pop { animation: popupBounce .35s; }
+@keyframes popupBounce { from { transform: scale(.7); } 60% { transform: scale(1.06); } }
+#popup-head {
+  font-size: 1.1rem; font-weight: bold;
+  margin-bottom: 8px; text-shadow: 1px 1px 0 #000;
+}
+#popup-card.ok #popup-head { color: var(--ok); }
+#popup-card.ng #popup-head { color: var(--danger); }
+#popup-body {
+  font-size: .82rem; line-height: 1.6; font-weight: bold;
+  margin-bottom: 12px;
+}
+#popup-body .exp { color: var(--gold); font-size: 1.05rem; }
+#popup-body .fixline { color: var(--text); font-weight: normal; }
+#popup-next {
+  display: block; width: 100%;
+  font-family: inherit; font-size: .95rem; font-weight: bold;
+  color: var(--win-bg); background: var(--win-line);
+  border: none; border-radius: 6px; padding: 12px; cursor: pointer;
+  touch-action: manipulation;
+}
+#popup-next:active { transform: scale(.98); }
+#popup-next::after { content: " ▼"; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* トースト（レベル変動通知） */
+#toast {
+  position: fixed; top: 12px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--win-bg);
+  border: 3px solid var(--gold);
+  color: var(--gold);
+  padding: 8px 16px; border-radius: 6px;
+  font-size: .82rem; font-weight: bold;
+  opacity: 0; pointer-events: none;
+  transition: opacity .3s; z-index: 10;
+  white-space: nowrap;
+}
+#toast.show { opacity: 1; }
+
+/* ============================================================
+   退出ボタン（右上）
+   ============================================================ */
+#exit-btn {
+  position: absolute;
+  top: 10px; right: 10px;
+  z-index: 8;
+  font-family: inherit; font-size: .62rem; font-weight: bold;
+  color: var(--ice);
+  background: var(--win-bg);
+  border: 2px solid var(--ice);
+  border-radius: 5px;
+  padding: 3px 8px;
+  cursor: pointer;
+  opacity: .85;
+  touch-action: manipulation;
+}
+#exit-btn:active { transform: scale(.95); }
+
+/* ============================================================
+   退出後：ぼうけんの きろく（結果リスト）
+   ============================================================ */
+#result-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(3,5,10,.86);
+  z-index: 20;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 14px 8px;
+  overflow-y: auto;
+}
+#result-overlay.show { display: flex; }
+#result-panel {
+  width: 100%; max-width: 430px;
+  display: flex; flex-direction: column;
+  max-height: calc(100dvh - 28px);
+}
+#result-head {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 8px; margin-bottom: 8px;
+}
+#result-title { color: var(--gold); font-weight: bold; font-size: .92rem; }
+#resume-btn {
+  font-family: inherit; font-size: .78rem; font-weight: bold;
+  color: var(--win-bg); background: var(--win-line);
+  border: none; border-radius: 5px; padding: 7px 12px; cursor: pointer;
+  white-space: nowrap; touch-action: manipulation;
+}
+#result-summary {
+  font-size: .78rem; font-weight: bold; margin-bottom: 8px;
+  padding-bottom: 8px; border-bottom: 1px solid #6a7ba8;
+}
+#result-summary .grn { color: var(--ok); }
+#result-summary .red { color: var(--danger); }
+#result-summary .rroom { font-size: .72rem; font-weight: normal; color: #c8d4f0; margin-top: 3px; }
+.rec .rtopic { color: var(--ice); font-size: .62rem; }
+#result-list { overflow-y: auto; }
+.rec {
+  display: flex; gap: 7px; align-items: flex-start;
+  font-size: .74rem; line-height: 1.45;
+  padding: 6px 2px; border-bottom: 1px solid #26325a;
+}
+.rec:last-child { border-bottom: none; }
+.rec .badge {
+  flex: none; width: 1.3em; text-align: center;
+  font-weight: bold; font-size: .95rem;
+}
+.rec.ok  .badge { color: var(--ok); }
+.rec.ng  .badge { color: var(--danger); }
+.rec .body { flex: 1; }
+.rec .rtopic { color: var(--ice); font-size: .62rem; }
+.rec .rtext  { color: var(--text); }
+.rec .ranswer { font-size: .64rem; color: #9fb0d8; margin-top: 1px; }
+#result-empty { font-size: .8rem; color: #9fb0d8; padding: 10px 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01s !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="game">
+
+  <!-- 退出ボタン（右上） -->
+  <button id="exit-btn" title="一旦退出する">⏻ 退出</button>
+
+  <!-- ステータスウィンドウ -->
+  <div id="status" class="win">
+    <span class="lv">ゆうしゃ Lv.<span id="level">1</span></span>
+    <div id="exp-wrap">
+      <div class="label">EXP</div>
+      <div class="bar-outer" id="exp-bar"><div id="exp-fill" class="bar-inner"></div></div>
+    </div>
+    <span class="kills">討伐 <span id="kills">0</span></span>
+  </div>
+
+  <!-- 部屋バー（部屋名＋移動ボタン） -->
+  <div id="roombar" class="win">
+    <span id="room-name">保安管理技術の谷</span>
+    <button id="room-switch">▶ べつの へやへ</button>
+  </div>
+
+  <!-- バトルシーン：部屋（谷／森で背景が変わる） -->
+  <div id="scene" class="room-tech">
+    <div id="wall"></div>
+    <div class="torch t1"></div>
+    <div class="torch t2"></div>
+    <div id="carpet"></div>
+
+    <!-- 敵の名前とHP -->
+    <div id="enemy-tag">
+      <span id="enemy-name">こおりのけっしょう</span>
+      <div id="enemy-hp-outer"><div id="enemy-hp"></div></div>
+    </div>
+
+    <!-- 敵（ピクセルアートはJSで生成） -->
+    <div id="enemy-anchor" class="hover"><div id="enemy-px" class="sprite"></div></div>
+
+    <!-- 斬撃エフェクト -->
+    <div id="slash"></div>
+
+    <!-- 宝箱 -->
+    <div id="chest"><div id="chest-px" class="sprite"></div></div>
+
+    <!-- 勇者（後ろ姿・下側）＋頭上のHPバー -->
+    <div id="hero-anchor">
+      <div id="hero-tag">
+        <span class="label">HP <span id="hp-num">100</span>/100</span>
+        <div id="hero-hp-outer"><div id="hp-bar"></div></div>
+      </div>
+      <div id="hero-px" class="sprite"></div>
+    </div>
+  </div>
+
+  <!-- メッセージウィンドウ -->
+  <div id="msg" class="win">＊「こおりの　どうくつへ　ようこそ。」</div>
+
+  <!-- 問題ウィンドウ -->
+  <div id="question-wrap">
+    <div id="question-card" class="win"></div>
+  </div>
+
+  <!-- 4択コマンド -->
+  <div id="choices"></div>
+
+</div>
+
+<div id="toast"></div>
+
+<!-- 回答後の確認ポップアップ -->
+<div id="popup-overlay">
+  <div id="popup-card" class="win">
+    <div id="popup-head"></div>
+    <div id="popup-body"></div>
+    <button id="popup-next">▶ かくにん（つぎへ）</button>
+  </div>
+</div>
+
+<!-- 退出後：解いた問題の記録リスト -->
+<div id="result-overlay">
+  <div id="result-panel" class="win">
+    <div id="result-head">
+      <span id="result-title">＊ ぼうけんの きろく</span>
+      <button id="resume-btn">▶ もどる</button>
+    </div>
+    <div id="result-summary"></div>
+    <div id="result-list"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   問題データベース①：保安管理技術の谷
+   令和7年度 第三種冷凍機械責任者試験「保安管理技術」より（○×化）
+   ============================================================ */
+const QUIZ_TECH = [
+  // ── Q1 冷凍の原理・冷凍サイクル ──
+  { topic:"冷凍の原理", q:"凝縮器で放出される熱量は、圧縮機の動力にちょうど等しい。", ok:false,
+    fix:"×：放出熱量は「冷凍能力＋駆動軸動力」の和。" },
+  { topic:"冷凍の原理", q:"液⇄蒸気の状態変化で出入りする熱を潜熱という。", ok:true,
+    fix:"○：状態変化に伴う熱が潜熱。" },
+  { topic:"冷凍の原理", q:"成績係数（COP）が大きいほど、小さい動力で大きな冷凍能力が得られる。", ok:true,
+    fix:"○：COP＝冷凍能力／動力。大きいほど効率的。" },
+  { topic:"冷凍の原理", q:"軸動力を小さくするには、蒸発温度をできるだけ低く、凝縮温度を高くするとよい。", ok:false,
+    fix:"×：蒸発は下げすぎず、凝縮は上げすぎない運転がよい。" },
+
+  // ── Q2 熱の移動 ──
+  { topic:"熱の移動", q:"固体壁の伝熱量は、温度差・伝熱面積・熱通過率に比例する。", ok:true,
+    fix:"○：Q＝K·A·Δt の関係。" },
+  { topic:"熱の移動", q:"算術平均温度差は Δtm＝(Δt1＋Δt2)／2 で表せる。", ok:true,
+    fix:"○：入口側と出口側の温度差の平均。" },
+  { topic:"熱の移動", q:"熱伝導抵抗が大きいほど、物体内を熱が流れやすい。", ok:false,
+    fix:"×：抵抗が大きいほど熱は流れ「にくい」。" },
+  { topic:"熱の移動", q:"水あか・木材・鉄鋼・空気のうち、熱伝導率が最も小さいのは空気。", ok:true,
+    fix:"○：空気は断熱性が高い。" },
+
+  // ── Q3 圧縮機の性能 ──
+  { topic:"圧縮機の性能", q:"吸込み圧力が低く過熱度が大きいほど比体積が増え、冷媒循環量は増大する。", ok:false,
+    fix:"×：比体積が増えると循環量は「減少」する。" },
+  { topic:"圧縮機の性能", q:"往復圧縮機の押しのけ量は、行程容積×気筒数×回転速度で決まる。", ok:true,
+    fix:"○：ピストン押しのけ量の定義。" },
+  { topic:"圧縮機の性能", q:"理論ヒートポンプのCOPは、同条件の冷凍サイクルCOPより1だけ大きい。", ok:true,
+    fix:"○：COP(HP)＝COP(冷凍)＋1。" },
+  { topic:"圧縮機の性能", q:"蒸発・凝縮の温度差が大きいほど、断熱効率と機械効率は大きくなる。", ok:false,
+    fix:"×：温度差が大きいと両効率は「小さく」なる。" },
+
+  // ── Q4 冷媒・冷凍機油 ──
+  { topic:"冷媒・冷凍機油", q:"フルオロカーボン冷媒は、液は冷凍機油より重く、ガスは空気より重い。", ok:true,
+    fix:"○：液・ガスとも重い。" },
+  { topic:"冷媒・冷凍機油", q:"非共沸混合冷媒は、圧力一定の凝縮で露点と沸点に温度差が生じない。", ok:false,
+    fix:"×：露点と沸点に「差が生じる」（温度勾配）。" },
+  { topic:"冷媒・冷凍機油", q:"R1234yf（HFO）には、HFC冷媒と同じく合成油が一般に使われる。", ok:true,
+    fix:"○：R1234yfは合成油。R22は鉱油、R32は合成油。" },
+  { topic:"冷媒・冷凍機油", q:"R290・R717・R744は自然冷媒と呼ばれる。", ok:true,
+    fix:"○：プロパン・アンモニア・二酸化炭素。" },
+
+  // ── Q5 圧縮機の特性 ──
+  { topic:"圧縮機の特性", q:"スクリュー圧縮機のスライド弁は段階制御のみで、無段階制御はできない。", ok:false,
+    fix:"×：ある範囲で無段階制御が可能。" },
+  { topic:"圧縮機の特性", q:"圧縮機は圧縮方法により、往復式と遠心式に大別される。", ok:false,
+    fix:"×：「容積式」と遠心式に大別される。" },
+  { topic:"圧縮機の特性", q:"停止中のクランクケース油温が高いほど、始動時のオイルフォーミングが起きやすい。", ok:false,
+    fix:"×：油温が「低い」ほど起きやすい。" },
+  { topic:"圧縮機の特性", q:"強制給油式の給油圧力＝油圧計指示圧力−クランクケース圧力。", ok:true,
+    fix:"○：差圧が実際の給油圧力。" },
+
+  // ── Q6 凝縮器・冷却塔 ──
+  { topic:"凝縮器", q:"空冷凝縮器では、空気側の熱伝達率は冷媒側よりはるかに小さい。", ok:true,
+    fix:"○：空気側が律速になる。" },
+  { topic:"凝縮器", q:"シェルアンドチューブ凝縮器は、管外を冷却水、管内を冷媒が流れる。", ok:false,
+    fix:"×：管「外」を冷媒、管「内」を冷却水が流れる。" },
+  { topic:"凝縮器", q:"一般に空冷凝縮器は、水冷凝縮器より凝縮温度が高くなる。", ok:true,
+    fix:"○：空冷は凝縮温度が高め。" },
+  { topic:"凝縮器", q:"理論凝縮負荷は、冷凍能力＋理論断熱圧縮動力で求まる。", ok:true,
+    fix:"○：凝縮器は入った熱を全て放出。" },
+
+  // ── Q7 蒸発器・除霜 ──
+  { topic:"蒸発器・除霜", q:"空気冷却用蒸発器では、空気と冷媒の流れを向流にするのがよい。", ok:true,
+    fix:"○：向流で温度差を有効利用。" },
+  { topic:"蒸発器・除霜", q:"満液式蒸発器の平均熱通過率は、乾式より小さい。", ok:false,
+    fix:"×：満液式のほうが「大きい」。" },
+  { topic:"蒸発器・除霜", q:"ホットガス除霜は、霜が厚くなってからの除霜に適する。", ok:false,
+    fix:"×：厚くなると融けにくく時間がかかる。" },
+  { topic:"蒸発器・除霜", q:"ユニットクーラは、フィンコイルにファン・電動機・ドレンパン等を一体化したもの。", ok:true,
+    fix:"○：冷凍・冷蔵で多用される。" },
+
+  // ── Q8 自動制御機器 ──
+  { topic:"自動制御機器", q:"直動式電磁弁は、通電するとプランジャが吸引されて弁が閉じる。", ok:false,
+    fix:"×：通電で弁が「開く」（通常閉型）。" },
+  { topic:"自動制御機器", q:"キャピラリチューブは、絞り膨張に加え過熱度の制御もできる。", ok:false,
+    fix:"×：流量・過熱度の制御はできない。" },
+  { topic:"自動制御機器", q:"断水リレーのフロースイッチには、水流を直接検出するパドル式がある。", ok:true,
+    fix:"○：パドルで流れを検出。" },
+  { topic:"自動制御機器", q:"ガスチャージ式膨張弁は、受圧部を感温筒より高温に保たないと正常作動しない。", ok:true,
+    fix:"○：受圧部で凝縮させないため。" },
+
+  // ── Q9 附属機器 ──
+  { topic:"附属機器", q:"高圧受液器は、出口から蒸気が液とともに流れ出ない構造にする。", ok:true,
+    fix:"○：液のみを確実に送る。" },
+  { topic:"附属機器", q:"油分離器は、大形・低温のフルオロカーボンやアンモニア装置に用いる。", ok:true,
+    fix:"○：油戻りを確保するため。" },
+  { topic:"附属機器", q:"液分離器は、圧縮機の吐出しガス配管に設ける。", ok:false,
+    fix:"×：蒸発器と圧縮機の間の「吸込み配管」に設ける。" },
+  { topic:"附属機器", q:"フィルタドライヤの乾燥剤は、化学変化を起こして水分を除去する。", ok:false,
+    fix:"×：化学変化を「起こさず」水分を吸着する。" },
+
+  // ── Q10 冷媒配管 ──
+  { topic:"冷媒配管", q:"配管用炭素鋼鋼管（SGP）は −30℃ で使用できる。", ok:false,
+    fix:"×：SGPが使えるのは −25℃ まで。" },
+  { topic:"冷媒配管", q:"小口径の銅配管接続には、フレア管継手やろう付継手を用いる。", ok:true,
+    fix:"○：一般的な接続方法。" },
+  { topic:"冷媒配管", q:"高圧液配管は、フラッシュ防止のため流速が小さくなる管径にする。", ok:true,
+    fix:"○：気化（フラッシュ）を防ぐ。" },
+  { topic:"冷媒配管", q:"横走り吸込み配管のUトラップは、再始動時に液圧縮の危険がある。", ok:true,
+    fix:"○：油・液がたまり液戻りの原因に。" }
+];
+
+
+/* ============================================================
+   問題データベース②：法令の森
+   令和7年度 第三種冷凍機械責任者試験「法令」より（○×化）
+   ============================================================ */
+const QUIZ_HOREI = [
+  // ── Q1 高圧ガスの定義等 ──
+  { topic:"高圧ガスの定義", q:"高圧ガス保安法は、民間事業者や保安協会による自主的な保安活動の促進も定めている。", ok:true,
+    fix:"○：法第一条の目的に含まれる。" },
+  { topic:"高圧ガスの定義", q:"温度35℃で1MPaとなる圧縮ガスは、現在0.9MPaなら高圧ガスではない。", ok:false,
+    fix:"×：現在0.9MPaでも、35℃で1MPa以上になる圧縮ガスは高圧ガス。" },
+  { topic:"高圧ガスの定義", q:"0.2MPaになる温度が32℃の液化ガスは、現在0.1MPaでも高圧ガスである。", ok:true,
+    fix:"○：0.2MPa到達温度が35℃以下なら高圧ガス。" },
+
+  // ── Q2 適用除外 ──
+  { topic:"適用除外", q:"1日の冷凍能力が3トン未満の冷凍設備内の高圧ガスは、法の適用が除外される。", ok:true,
+    fix:"○：3トン未満は適用除外。" },
+  { topic:"適用除外", q:"冷凍能力3トン以上5トン未満の難燃性フルオロカーボンは、法の適用が除外される。", ok:true,
+    fix:"○：所定の難燃性基準に適合するものは除外。" },
+  { topic:"適用除外", q:"回収装置内の所定のフルオロカーボンは、法の適用が除外される。", ok:true,
+    fix:"○：回収装置内の特定のものは除外。" },
+
+  // ── Q3 製造の許可 ──
+  { topic:"製造の許可", q:"冷凍能力300トンの認定指定設備のみで製造する者は、知事等の許可が必要。", ok:false,
+    fix:"×：認定指定設備のみなら許可は不要（届出で足りる）。" },
+  { topic:"製造の許可", q:"アンモニア・冷凍能力50トンの設備のみで製造する者は、知事等の許可が必要。", ok:true,
+    fix:"○：アンモニアは50トン以上で許可が必要。" },
+  { topic:"製造の許可", q:"フルオロカーボン・冷凍能力40トンの設備（認定指定設備を除く）は、知事等の許可が必要。", ok:false,
+    fix:"×：50トン未満なので許可は不要。" },
+
+  // ── Q4 高圧ガスの貯蔵 ──
+  { topic:"高圧ガスの貯蔵", q:"車両に積載した容器での貯蔵は、いかなる場合でも禁じられていない。", ok:false,
+    fix:"×：定めのある場合を除き、車両に固定・積載した容器での貯蔵は不可。" },
+  { topic:"高圧ガスの貯蔵", q:"液化アンモニアは通風の良い場所で貯蔵するが、液化フルオロカーボンにその定めはない。", ok:true,
+    fix:"○：可燃性・毒性ガスは通風の良い場所。特定不活性ガスには当該定めなし。" },
+  { topic:"高圧ガスの貯蔵", q:"液化フルオロカーボンの容器温度には、いかなる場合も定めがない。", ok:false,
+    fix:"×：充填容器等は常に温度40℃以下に保つ。フルオロカーボンも同様。" },
+
+  // ── Q5 高圧ガスの移動 ──
+  { topic:"高圧ガスの移動", q:"液化フルオロカーボンを移動するときは、車両に警戒標を掲げる必要がある。", ok:true,
+    fix:"○：見やすい箇所に警戒標が必要。" },
+  { topic:"高圧ガスの移動", q:"可燃性・毒性・特定不活性ガスの移動時は、注意事項の書面を運転者に携帯させる。", ok:true,
+    fix:"○：名称・性状・注意事項の書面を交付・携帯・遵守させる。" },
+  { topic:"高圧ガスの移動", q:"液化フルオロカーボンの移動には、転倒・バルブ損傷防止措置の定めはない。", ok:false,
+    fix:"×：5L超の充填容器等は衝撃・損傷防止措置が必要。フルオロカーボンも同様。" },
+
+  // ── Q6 充填容器 ──
+  { topic:"充填容器", q:"液化ガスの充填質量は G＝V／C（V：内容積、C：定数）で計算する。", ok:true,
+    fix:"○：容器則22条。G＝V÷C で求める。" },
+  { topic:"充填容器", q:"液化アンモニアの容器の外面塗色は、ねずみ色である。", ok:false,
+    fix:"×：アンモニアの容器は「白色」。" },
+  { topic:"充填容器", q:"容器検査合格容器には、次回の容器再検査の年月を刻印する。", ok:false,
+    fix:"×：刻印するのは「合格した年月」。次回再検査の年月は刻印しない。" },
+
+  // ── Q7 冷凍能力の算定 ──
+  { topic:"冷凍能力の算定", q:"遠心式圧縮機では、原動機の定格出力が冷凍能力算定に必要な数値の一つ。", ok:true,
+    fix:"○：遠心式は原動機定格出力を用いる。" },
+  { topic:"冷凍能力の算定", q:"吸収式冷凍設備では、蒸発器の表面積が冷凍能力算定に必要な数値の一つ。", ok:false,
+    fix:"×：表面積は自然環流・自然循環式で使う。吸収式は入熱量27,800kJ/hで1トン。" },
+  { topic:"冷凍能力の算定", q:"往復動式圧縮機では、冷媒ガスに応じた定数Cが冷凍能力算定に必要な数値の一つ。", ok:true,
+    fix:"○：容積圧縮式は定数Cを用いる。" },
+
+  // ── Q8 第二種製造者 ──
+  { topic:"第二種製造者", q:"第二種製造者は、ガスの種類に関係なく冷凍能力3トン以上50トン未満の者をいう。", ok:false,
+    fix:"×：区分はガスの種類で異なる（アンモニア等は5トン以上50トン未満など）。" },
+  { topic:"第二種製造者", q:"第二種製造者は、変更工事完成後に所定の気密試験を行ってから製造できる。", ok:true,
+    fix:"○：許容圧力以上での気密試験後に製造可。" },
+  { topic:"第二種製造者", q:"第二種製造者のうちには、定期自主検査を行わなければならない者がある。", ok:true,
+    fix:"○：一定の者は定期自主検査が必要。" },
+
+  // ── Q9 冷凍保安責任者・代理者 ──
+  { topic:"冷凍保安責任者", q:"冷凍能力100トンの施設の冷凍保安責任者に、第三種冷凍機械責任者を選任できる。", ok:false,
+    fix:"×：100トン以上には第三種は選任できない。" },
+  { topic:"冷凍保安責任者", q:"責任者が職務を行えない時は、直ちに代理者を選任し知事等に届け出る。", ok:false,
+    fix:"×：「あらかじめ選任した」代理者に職務を代行させる。" },
+  { topic:"冷凍保安責任者", q:"責任者を解任・選任したときは、遅滞なく知事等に届け出る。", ok:true,
+    fix:"○：解任・選任は遅滞なく届出が必要。" },
+
+  // ── Q10 保安検査 ──
+  { topic:"保安検査", q:"特定施設は、定期に知事等・保安協会・指定機関の保安検査を受ける。", ok:true,
+    fix:"○：定期に保安検査を受ける。" },
+  { topic:"保安検査", q:"協会等の保安検査を受け届け出れば、知事等の保安検査は受けなくてよい。", ok:true,
+    fix:"○：届出により知事等の検査は不要。" },
+  { topic:"保安検査", q:"保安検査は、施設の位置・構造・設備が技術基準に適合するかを調べる。", ok:true,
+    fix:"○：位置・構造・設備の適合性を検査する。" }
+];
+/* ============================================================
+   ピクセルアート定義（文字マップ → box-shadowで描画）
+   1文字 = 1ドット。'.' は透明。
+   ============================================================ */
+/* 勇者（後ろ姿）：茶髪・青いマント・背中の剣 */
+const HERO_MAP = [
+  ".....gg.....",
+  "....gssg....",
+  "..hhgssghh..",
+  ".hhhgssghhh.",
+  ".hhhgssghhh.",
+  "..hhhhhhhh..",
+  "...cccccc...",
+  "..cbccccbc..",
+  ".sccccccccs.",
+  ".sccccccccs.",
+  "..cccccccc..",
+  "..cccccccc..",
+  "...dd..dd...",
+  "...dd..dd...",
+];
+const HERO_COLORS = {
+  h:"#7a4a22",  // 髪（茶）
+  g:"#c8a038",  // 剣の柄・鞘（金）
+  s:"#f2cfa0",  // 肌（腕）
+  c:"#3a6ea8",  // マント（青）
+  b:"#284e7c",  // マントの影
+  d:"#22334e",  // 脚・ブーツ
+};
+
+/* 氷結晶モンスター（通常） */
+const ENEMY_MAP = [
+  ".....ww.....",
+  "....wiiw....",
+  "...wiiiiw...",
+  "..wiieiiiw..",
+  ".wiieiieiiw.",
+  "wiiiiiiiiiiw",
+  ".wiiiiiiiiw.",
+  "..wiimmiiw..",
+  "...wiiiiw...",
+  "b..wiiiiw..b",
+  "bb..wiiw..bb",
+  ".....ww.....",
+];
+const ENEMY_COLORS = {
+  w:"#e8f8ff",  // 結晶のふち（白）
+  i:"#7fd0f0",  // 氷（水色）
+  e:"#10142a",  // 目
+  m:"#10142a",  // 口
+  b:"#a8e0f8",  // 足元のかけら
+};
+/* レア：おうごんのけっしょう（色替え） */
+const GOLD_COLORS = {
+  w:"#fff4d0", i:"#f0c860", e:"#10142a", m:"#10142a", b:"#f8e0a0",
+};
+
+/* 森の敵：もりのこだま（木の精） 10x10 */
+const LEAF_MAP = [
+  "...wwww...",
+  "..wllllw..",
+  ".wllllllw.",
+  "wllelllelw",
+  "wllelllelw",
+  "wllllllllw",
+  "wlllmmlllw",
+  ".wllllllw.",
+  "..wl..lw..",
+  "...b..b...",
+];
+const LEAF_COLORS = {
+  w:"#2f7d3a",  // 葉のふち（濃緑）
+  l:"#7ed46a",  // 葉（黄緑）
+  e:"#10240f",  // 目
+  m:"#10240f",  // 口
+  b:"#6a4a2a",  // 幹（足）
+};
+/* レア：こがねのこだま（金色の木の精） */
+const LEAFGOLD_COLORS = {
+  w:"#b8892a", l:"#f0c860", e:"#241a08", m:"#241a08", b:"#8a6420",
+};
+
+/* ============================================================
+   部屋（ダンジョン）の定義
+   ============================================================ */
+const ROOMS = {
+  tech: {
+    name: "保安管理技術の谷",
+    accent: "var(--ice)",
+    sceneClass: "room-tech",
+    quiz: () => QUIZ_TECH,
+    enemyName: "こおりのけっしょう",
+    enemyRareName: "おうごんのけっしょう",
+    enemyMap: () => ENEMY_MAP,
+    colors: ENEMY_COLORS,
+    rareColors: GOLD_COLORS,
+    welcome: `＊「こおりの　たにへ　ようこそ。」`,
+  },
+  horei: {
+    name: "法令の森",
+    accent: "#7ed46a",
+    sceneClass: "room-forest",
+    quiz: () => QUIZ_HOREI,
+    enemyName: "もりのこだま",
+    enemyRareName: "こがねのこだま",
+    enemyMap: () => LEAF_MAP,
+    colors: LEAF_COLORS,
+    rareColors: LEAFGOLD_COLORS,
+    welcome: `＊「ほうれいの　もりへ　ようこそ。」`,
+  },
+};
+const ROOM_ORDER = ["tech", "horei"];
+
+/* 宝箱 */
+const CHEST_MAP = [
+  ".oooooooo.",
+  "oyyyyyyyyo",
+  "oyoooooyo.",
+  "oooooooooo",
+  "oyyykkyyyo",
+  "oyyykkyyyo",
+  ".oooooooo.",
+];
+const CHEST_COLORS = { o:"#6a4a22", y:"#c8a038", k:"#f0e0a0" };
+
+/* 文字マップからbox-shadow文字列を生成して描画する */
+function drawSprite(el, map, colors, px) {
+  const shadows = [];
+  map.forEach((row, y) => {
+    [...row].forEach((ch, x) => {
+      if (colors[ch]) shadows.push(`${x*px}px ${y*px}px 0 ${colors[ch]}`);
+    });
+  });
+  el.style.boxShadow = shadows.join(",");
+  el.style.background = "transparent";
+  // アンカーに大きさを持たせる（中央寄せ計算のため）
+  el.parentElement.style.width  = map[0].length * px + "px";
+  el.parentElement.style.height = map.length * px + "px";
+}
+
+/* ============================================================
+   定数・ゲーム状態
+   ============================================================ */
+const MAX_HP       = 100;
+const EXP_PER_HIT  = 40;      // 正解1回（=攻撃1回）の経験値
+const KILL_BONUS   = 20;      // 敵を倒したときのボーナス経験値
+const EXP_TO_LEVEL = 100;
+const IDLE_MS      = 60000;   // プレイ中の放置ペナルティ間隔（1分）
+const PX = 5;
+
+let level = 1;
+let exp = 0;
+let hp = MAX_HP;
+let kills = 0;                // 討伐数（遊び心ステータス）
+let enemyHP = 2;              // 敵HP：正解2回で撃破
+let enemyMaxHP = 2;
+let isGold = false;           // レア敵フラグ
+let currentQ = null;
+let answered = false;
+let busy = false;             // 演出中の多重操作防止
+let lastActionTime = Date.now();
+let history = [];             // セッション中に解いた問題の記録
+let currentRoom = "tech";     // 現在の部屋
+let streak = 0;               // 連続正解（部屋を移動するとリセット）
+
+const $ = (id) => document.getElementById(id);
+
+/* ============================================================
+   localStorage：レベル・討伐数の保存と放置ペナルティ
+   ============================================================ */
+function saveProgress() {
+  localStorage.setItem("playerLevel", String(level));
+  localStorage.setItem("lastPlayedTime", String(Date.now()));
+  localStorage.setItem("kills", String(kills));
+}
+
+function loadProgress() {
+  const savedLevel = localStorage.getItem("playerLevel");
+  const savedTime  = localStorage.getItem("lastPlayedTime");
+  const savedKills = localStorage.getItem("kills");
+
+  if (savedLevel !== null) level = Math.max(1, parseInt(savedLevel, 10) || 1);
+  if (savedKills !== null) kills = Math.max(0, parseInt(savedKills, 10) || 0);
+
+  // ---- 放置ペナルティ：前回プレイからの経過時間で判定 ----
+  if (savedTime !== null) {
+    const elapsed = Date.now() - parseInt(savedTime, 10);
+    let penalty = 0;
+    if      (elapsed >= 3600000) penalty = 10;  // 1時間以上 → -10
+    else if (elapsed >=  600000) penalty = 5;   // 10分以上  → -5
+    else if (elapsed >=   60000) penalty = 1;   // 1分以上   → -1
+
+    if (penalty > 0) {
+      const before = level;
+      level = Math.max(1, level - penalty);
+      if (level < before) {
+        showToast(`しばらく修行をサボったため Lv.${before}→${level}…`);
+        setMsg(`＊「うでが　なまって　しまったようだ…。<br>　（Lv.${before} → <span class="red">Lv.${level}</span>）」`);
+      }
+    }
+  }
+  saveProgress();
+}
+
+/* ============================================================
+   表示更新・演出ユーティリティ
+   ============================================================ */
+function updateStatus() {
+  $("level").textContent = level;
+  $("hp-num").textContent = hp;
+  $("kills").textContent = kills;
+  const bar = $("hp-bar");
+  bar.style.width = (hp / MAX_HP * 100) + "%";
+  bar.classList.toggle("low", hp <= 30);
+  $("exp-fill").style.width = (exp / EXP_TO_LEVEL * 100) + "%";
+  $("enemy-hp").style.width = (enemyHP / enemyMaxHP * 100) + "%";
+}
+
+function setMsg(html) { $("msg").innerHTML = html; }
+
+function showToast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+function popup(text, color, x, y) {
+  const el = document.createElement("div");
+  el.className = "popup";
+  el.textContent = text;
+  el.style.color = color;
+  el.style.left = x;
+  el.style.top = y;
+  $("scene").appendChild(el);
+  setTimeout(() => el.remove(), 1000);
+}
+
+/* ============================================================
+   敵の出現（10%でレア敵。部屋ごとに姿・名前が変わる）
+   ============================================================ */
+function spawnEnemy() {
+  const room = ROOMS[currentRoom];
+  isGold = Math.random() < 0.10;
+  enemyMaxHP = isGold ? 1 : 2;   // レアは一撃だが経験値3倍
+  enemyHP = enemyMaxHP;
+
+  drawSprite($("enemy-px"), room.enemyMap(), isGold ? room.rareColors : room.colors, PX);
+  $("enemy-name").textContent = isGold ? room.enemyRareName : room.enemyName;
+  $("enemy-name").style.color = isGold ? "var(--gold)" : "var(--text)";
+
+  const anchor = $("enemy-anchor");
+  anchor.classList.remove("slain");
+  anchor.classList.add("spawn");
+  setTimeout(() => { anchor.classList.remove("spawn"); anchor.classList.add("hover"); }, 500);
+
+  setMsg(isGold
+    ? `<span class="gold">＊${room.enemyRareName}が　あらわれた！</span><br>＊たおせば　けいけんち3ばい！`
+    : `＊${room.enemyName}が　あらわれた！`);
+  updateStatus();
+}
+
+/* ============================================================
+   部屋の切り替え（いつでも移動できる）
+   ============================================================ */
+function switchRoom() {
+  if (busy) return;
+  const idx = ROOM_ORDER.indexOf(currentRoom);
+  currentRoom = ROOM_ORDER[(idx + 1) % ROOM_ORDER.length];
+  applyRoom();
+  streak = 0;                 // 連続正解は部屋移動でリセット
+  spawnEnemy();
+  nextQuestion();
+  lastActionTime = Date.now();
+  showToast(`${ROOMS[currentRoom].name} へ　いどうした！`);
+}
+
+/* 現在の部屋を画面に反映（背景・部屋名・アクセント色） */
+function applyRoom() {
+  const room = ROOMS[currentRoom];
+  const scene = $("scene");
+  scene.classList.remove("room-tech", "room-forest");
+  scene.classList.add(room.sceneClass);
+  $("room-name").textContent = room.name;
+  $("room-name").style.color = room.accent;
+}
+
+/* ============================================================
+   問題の出題（○×一問一答）
+   ============================================================ */
+function nextQuestion() {
+  answered = false;
+  busy = false;
+
+  const quiz = ROOMS[currentRoom].quiz();
+  currentQ = quiz[Math.floor(Math.random() * quiz.length)];
+
+  // 問題カード（上から降ってくる）
+  const card = $("question-card");
+  card.classList.remove("fall");
+  void card.offsetWidth;
+  card.innerHTML =
+    `<div id="q-topic">【${currentQ.topic}】</div>` +
+    `<div id="q-oxquestion">${currentQ.q}</div>` +
+    `<div id="q-hint">この記述は　正しい？</div>`;
+  card.classList.add("fall");
+  card.scrollTop = 0;
+
+  // ○×コマンド
+  const box = $("choices");
+  box.innerHTML = "";
+  [["○ ただしい", true], ["× まちがい", false]].forEach(([label, val]) => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn ox-btn " + (val ? "ox-o" : "ox-x");
+    btn.textContent = label;
+    btn.onclick = () => answer(btn, val);
+    box.appendChild(btn);
+  });
+}
+
+/* ============================================================
+   回答処理
+   ============================================================ */
+function answer(btn, choiceVal) {
+  if (answered || busy) return;
+  answered = true;
+  busy = true;
+  lastActionTime = Date.now();
+
+  const isCorrect = (choiceVal === currentQ.ok);
+  document.querySelectorAll(".choice-btn").forEach(b => b.disabled = true);
+  btn.classList.add(isCorrect ? "correct" : "wrong");
+
+  // セッション履歴に記録
+  history.push({
+    room: currentRoom,
+    roomName: ROOMS[currentRoom].name,
+    topic: currentQ.topic,
+    q: currentQ.q,
+    ok: currentQ.ok,
+    chosen: choiceVal,
+    correct: isCorrect
+  });
+
+  if (isCorrect) heroAttack();
+  else enemyAttack();
+}
+
+/* ---------- 正解：勇者の攻撃 ---------- */
+function heroAttack() {
+  const room = ROOMS[currentRoom];
+  streak++;                                   // 連続正解カウント
+  const comboBonus = streak >= 3 ? (streak - 2) * 10 : 0;  // 3連から+10ずつ
+
+  // 15%で かいしんのいちげき（経験値2倍）
+  const crit = Math.random() < 0.15;
+  let gained = EXP_PER_HIT * (crit ? 2 : 1) * (isGold ? 3 : 1) + comboBonus;
+
+  const hero = $("hero-anchor"), enemy = $("enemy-anchor"), slash = $("slash");
+  hero.classList.add("attack");
+
+  let atkMsg = crit
+    ? `＊ゆうしゃの　こうげき！<br><span class="gold">＊かいしんの　いちげき！！</span>`
+    : `＊ゆうしゃの　こうげき！`;
+  if (streak >= 3) atkMsg += `<br><span class="grn">＊${streak}れんさ！ ボーナス+${comboBonus}</span>`;
+  setMsg(atkMsg);
+
+  setTimeout(() => {
+    slash.classList.add("go");
+    enemy.classList.remove("hover");
+    enemy.classList.add("hit");
+    popup(crit ? "かいしん！" : "ヒット！", crit ? "var(--gold)" : "#fff", "58%", "90px");
+    if (streak >= 3) popup(`${streak} COMBO`, "var(--ok)", "30%", "60px");
+  }, 250);
+
+  setTimeout(() => {
+    hero.classList.remove("attack");
+    slash.classList.remove("go");
+    enemy.classList.remove("hit");
+
+    enemyHP--;
+    updateStatus();
+
+    if (enemyHP <= 0) defeatEnemy(gained);
+    else {
+      enemy.classList.add("hover");
+      gainExp(gained);
+      setMsg(`＊${room.enemyName}に　ダメージ！<br>＊<span class="gold">${gained}の　けいけんち</span>を　えた！ あと1げき！`);
+      showResult(true, gained);
+    }
+  }, 750);
+}
+
+/* ---------- 敵の撃破：EXPボーナス＋宝箱ドロップ ---------- */
+function defeatEnemy(gained) {
+  const enemy = $("enemy-anchor");
+  enemy.classList.remove("hover");
+  enemy.classList.add("slain");
+  kills++;
+  gained += KILL_BONUS * (isGold ? 3 : 1);
+
+  const name = isGold ? ROOMS[currentRoom].enemyRareName : ROOMS[currentRoom].enemyName;
+  let msg = `＊${name}を　たおした！<br>＊<span class="gold">${gained}の　けいけんち</span>を　えた！`;
+
+  // 30%で宝箱：ポーション（HP+30）
+  const drop = Math.random() < 0.30;
+  if (drop) {
+    const chest = $("chest");
+    drawSprite($("chest-px"), CHEST_MAP, CHEST_COLORS, PX);
+    chest.classList.add("show");
+    hp = Math.min(MAX_HP, hp + 30);
+    msg += `<br><span class="grn">＊たからばこを　みつけた！ ポーションで HP+30！</span>`;
+    setTimeout(() => chest.classList.remove("show"), 1600);
+  }
+
+  gainExp(gained);
+  setMsg(msg);
+  updateStatus();
+  showResult(true, gained);
+
+  // 少し間を置いて次の敵が出現
+  setTimeout(spawnEnemy, 1500);
+}
+
+/* ---------- 誤答：敵が襲いかかってくる ---------- */
+function enemyAttack() {
+  streak = 0;                                 // 連続正解リセット
+  const enemy = $("enemy-anchor"), hero = $("hero-anchor"), scene = $("scene");
+  enemy.classList.remove("hover");
+  enemy.classList.add("attack");
+
+  setMsg(`＊${ROOMS[currentRoom].enemyName}の　こうげき！`);
+
+  const dmg = 20 + Math.floor(Math.random() * 11);  // 20〜30ダメージ
+
+  setTimeout(() => {
+    hero.classList.add("hurt");
+    scene.classList.add("shake");
+    popup("-" + dmg, "var(--danger)", "58%", "190px");
+    hp = Math.max(0, hp - dmg);
+    updateStatus();
+  }, 300);
+
+  setTimeout(() => {
+    hero.classList.remove("hurt");
+    scene.classList.remove("shake");
+    enemy.classList.remove("attack");
+    enemy.classList.add("hover");
+
+    let msg = `＊ゆうしゃは　<span class="red">${dmg}の　ダメージ</span>を　うけた！`;
+
+    // HPが尽きたら：レベル-1（最低1）でHP全回復（教会で復活のイメージ）
+    if (hp === 0) {
+      const before = level;
+      level = Math.max(1, level - 1);
+      hp = MAX_HP;
+      msg += `<br><span class="red">＊ゆうしゃは　しんでしまった！</span>` +
+             (before > level ? `　Lv.${before}→${level}で　ふっかつ！` : `　ふっかつ！`);
+      updateStatus();
+    }
+    setMsg(msg);
+    saveProgress();
+    showResult(false, 0);
+  }, 800);
+}
+
+/* ---------- 経験値の加算とレベルアップ ---------- */
+function gainExp(amount) {
+  exp += amount;
+  let leveled = false;
+  while (exp >= EXP_TO_LEVEL) {
+    exp -= EXP_TO_LEVEL;
+    level++;
+    leveled = true;
+  }
+  if (leveled) showToast(`♪ レベルアップ！ ゆうしゃは Lv.${level} になった！`);
+  updateStatus();
+  saveProgress();
+}
+
+/* ---------- 回答後の確認ポップアップ ---------- */
+function showResult(isCorrect, gained) {
+  const card = $("popup-card");
+  card.classList.remove("ok", "ng", "pop");
+  void card.offsetWidth;
+  card.classList.add(isCorrect ? "ok" : "ng", "pop");
+
+  // fix の先頭「○：」「×：」を取り除いて要点だけにする
+  const fact = String(currentQ.fix).replace(/^[○×]：/, "");
+
+  if (isCorrect) {
+    $("popup-head").textContent = "ダメージをあたえた！";
+    $("popup-body").innerHTML =
+      `<span class="exp">＋EXP ${gained}てん</span><br>` +
+      `<span class="fixline">${fact}</span>`;
+  } else {
+    // 正しい答え（要点）を見せる
+    $("popup-head").textContent = "ダメージを食らった！";
+    $("popup-body").innerHTML =
+      `<span class="fixline">正しくは：${fact}</span>`;
+  }
+
+  $("popup-overlay").classList.add("show");
+  $("popup-next").onclick = () => {
+    $("popup-overlay").classList.remove("show");
+    lastActionTime = Date.now();
+    nextQuestion();
+  };
+}
+
+/* ============================================================
+   プレイ中の放置監視（1分放置ごとにレベル-1）
+   ============================================================ */
+setInterval(() => {
+  // きろく画面／回答ポップアップを開いている間は放置ペナルティを止める
+  if ($("result-overlay").classList.contains("show") ||
+      $("popup-overlay").classList.contains("show")) {
+    lastActionTime = Date.now();
+    return;
+  }
+  if (Date.now() - lastActionTime >= IDLE_MS) {
+    lastActionTime = Date.now();
+    if (level > 1) {
+      level--;
+      showToast(`修行をサボっている… Lv.${level} に下がった`);
+      setMsg(`＊「ぼんやり　していると　うでが　なまるぞ！」`);
+      updateStatus();
+      saveProgress();
+    }
+  }
+}, 5000);
+
+window.addEventListener("beforeunload", saveProgress);
+
+/* ============================================================
+   退出 → ぼうけんの きろく（解いた問題の一覧）
+   ============================================================ */
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+
+function showResults() {
+  const total = history.length;
+  const correct = history.filter(h => h.correct).length;
+  const wrong = total - correct;
+  const rate = total ? Math.round(correct / total * 100) : 0;
+
+  // 部屋ごとの内訳
+  let perRoom = "";
+  if (total) {
+    perRoom = ROOM_ORDER.map(rk => {
+      const rec = history.filter(h => h.room === rk);
+      if (!rec.length) return "";
+      const c = rec.filter(h => h.correct).length;
+      return `<div class="rroom">${ROOMS[rk].name}：` +
+             `<span class="grn">${c}</span>／${rec.length}もん</div>`;
+    }).join("");
+  }
+
+  $("result-summary").innerHTML = total
+    ? `といた もんだい：${total}もん　／　` +
+      `<span class="grn">せいかい ${correct}</span>　` +
+      `<span class="red">まちがい ${wrong}</span>　（せいかいりつ ${rate}％）` +
+      perRoom
+    : "";
+
+  const list = $("result-list");
+  if (!total) {
+    list.innerHTML = `<div id="result-empty">＊まだ もんだいを といていない。</div>`;
+  } else {
+    // 新しく解いた順（下→上）で表示
+    list.innerHTML = history.slice().reverse().map((h, i) => {
+      const num = total - i;  // 出題順の番号
+      const you = h.chosen ? "○" : "×";
+      const ans = h.ok ? "○" : "×";
+      const rn = h.roomName ? escapeHtml(h.roomName) + "／" : "";
+      return `<div class="rec ${h.correct ? "ok" : "ng"}">` +
+        `<span class="badge">${h.correct ? "○" : "×"}</span>` +
+        `<span class="body">` +
+          `<span class="rtopic">${num}. ${rn}【${escapeHtml(h.topic)}】</span><br>` +
+          `<span class="rtext">${escapeHtml(h.q)}</span>` +
+          `<span class="ranswer">あなた：${you}　／　こたえ：${ans}</span>` +
+        `</span>` +
+      `</div>`;
+    }).join("");
+  }
+  $("result-overlay").classList.add("show");
+}
+
+function hideResults() {
+  $("result-overlay").classList.remove("show");
+  lastActionTime = Date.now();  // 復帰時は放置扱いしない
+}
+
+$("exit-btn").onclick = () => { saveProgress(); showResults(); };
+$("resume-btn").onclick = hideResults;
+$("room-switch").onclick = switchRoom;
+
+/* ============================================================
+   ゲーム開始
+   ============================================================ */
+drawSprite($("hero-px"), HERO_MAP, HERO_COLORS, PX);
+loadProgress();
+applyRoom();
+updateStatus();
+spawnEnemy();
+nextQuestion();
+</script>
+</body>
+</html>
